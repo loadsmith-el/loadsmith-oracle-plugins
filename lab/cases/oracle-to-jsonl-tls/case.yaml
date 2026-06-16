@@ -1,0 +1,39 @@
+case:
+  name: oracle-to-jsonl-tls
+  description: >
+    Reads 100k rows from Oracle over TLS (TCPS) and writes them to JSONL.
+    Validates the connector's rustls + rustls-rustcrypto handshake and encrypted
+    TNS against a real Oracle endpoint.
+
+    Unlike the postgres/mysql `require` cases, oracle-rs always verifies the
+    server certificate (it has no encrypt-without-verify mode), so this case uses
+    `tls.mode: verify-ca` and pins the lab CA via `tls.root_cert` — exercising
+    real certificate-chain pinning. The TLS endpoint is an stunnel terminator
+    baked into the lab-oracle image (LOADSMITH_ENABLE_TLS=on enables it on 2484);
+    see loadsmith-lab-canonical-images/images/lab-oracle/README.md § TLS.
+  tags: [oracle, jsonl, tls, smoke]
+
+services:
+  - image: images/lab-oracle
+    alias: oracle
+    env:
+      - LOADSMITH_ENABLE_TLS=on   # start the stunnel TLS terminator on :2484
+    readiness:
+      tcp: 1521                   # probe the plaintext listener (the DB itself)
+      timeout_seconds: 600
+      oracle:
+        service_name: FREEPDB1
+        user: lab
+        password: lab
+        probe_query: "SELECT 1 FROM spacecraft_telemetry_events WHERE ROWNUM = 1"
+
+pipeline:
+  file: pipeline.yaml
+
+expect:
+  status: success
+  rows_read: 100000
+  rows_written: 100000
+  output:
+    file: events.jsonl
+    row_count: 100000

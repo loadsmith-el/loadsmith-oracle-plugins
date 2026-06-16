@@ -1,0 +1,7 @@
+/target
+**/target
+Cargo.lock
+# image build context staging (CI drops per-arch plugin binaries here) — NOT
+# connector/src/bin, which is source.
+/bin/
+/dist/

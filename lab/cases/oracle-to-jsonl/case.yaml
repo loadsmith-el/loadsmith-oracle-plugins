@@ -1,0 +1,27 @@
+case:
+  name: oracle-to-jsonl
+  description: Reads 100k rows from Oracle and writes them to JSONL
+  tags: [oracle, jsonl, smoke]
+
+services:
+  - image: images/lab-oracle
+    alias: oracle
+    readiness:
+      tcp: 1521
+      timeout_seconds: 600   # Oracle is slow to open the PDB + load the seed
+      oracle:
+        service_name: FREEPDB1
+        user: lab
+        password: lab
+        probe_query: "SELECT 1 FROM spacecraft_telemetry_events WHERE ROWNUM = 1"
+
+pipeline:
+  file: pipeline.yaml
+
+expect:
+  status: success
+  rows_read: 100000
+  rows_written: 100000
+  output:
+    file: events.jsonl
+    row_count: 100000

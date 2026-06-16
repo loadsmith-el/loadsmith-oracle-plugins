@@ -1,0 +1,37 @@
+pipeline:
+  name: oracle-to-jsonl-tls
+  description: Telemetry export over TCPS (wallet-verified) — native ODPI-C TLS
+
+# NOTE — TLS on the native (ODPI-C) driver is WALLET-based, not PEM-based.
+# Unlike the pure-Rust plugins (which take an inline `root_cert` PEM + rustls),
+# the Oracle client verifies the server against an Oracle wallet (cwallet.sso)
+# holding the trusted CA. So this case needs an auto-login wallet built from the
+# lab CA (loadsmith-lab-canonical-images/images/lab-oracle/tls/ca.crt) and made
+# available to the engine container at `wallet_dir`.
+#
+# Building cwallet.sso needs orapki/mkstore (NOT in Instant Client Basic). Until
+# the lab wires a wallet in (see lab/README.md, the wallet follow-up), this case
+# is expected to be skipped/pending. The plaintext cases cover read/write/merge.
+
+source:
+  type: oracle
+  config:
+    host: oracle
+    port: 2484               # stunnel TLS terminator → plaintext TNS on 1521
+    service_name: FREEPDB1
+    user: lab
+    password: lab
+    query: "SELECT * FROM spacecraft_telemetry_events ORDER BY event_sequence"
+    batch_size: 2000
+    tls:
+      enabled: true
+      # Directory holding an auto-login wallet (cwallet.sso) with the lab CA.
+      wallet_dir: /wallet
+      # The lab leaf cert's SAN is for localhost/the service, not the container
+      # alias "oracle"; skip DN matching (parity with the old verify-ca case).
+      server_dn_match: false
+
+destination:
+  type: jsonl
+  config:
+    path: /output/events.jsonl

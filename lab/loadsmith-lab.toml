@@ -1,0 +1,23 @@
+# loadsmith-lab manifest for the out-of-canon Oracle (ODPI-C) connector.
+#
+# Register this directory as an origin to run the cases:
+#   loadsmith-lab origin local add oracle-lab ../loadsmith-oracle-plugins/lab
+# The cases reference the Oracle DB fixture as `images/lab-oracle`, which lives
+# in the canonical `images` origin (loadsmith-lab-canonical-images) — a
+# cross-origin reference. Register that too:
+#   loadsmith-lab origin local add images ../loadsmith-lab-canonical-images
+#
+# The connector needs the Instant Client, so run the cases against the delivery
+# image (which bakes it in):
+#   loadsmith-lab run --select oracle-lab/oracle-to-jsonl \
+#     --loadsmith-image ghcr.io/loadsmith-el/loadsmith-oracle-odpi
+# (`--loadsmith-image` is the generic engine-image override; see lab/README.md.)
+#
+# This origin ships only cases — the lab-oracle DB image stays in the canonical
+# images origin (it is a generic database fixture, like lab-postgres/lab-mysql).
+
+[cases]
+oracle-to-jsonl               = "Reads 100k rows from Oracle and writes them to JSONL (content/type smoke test)"
+oracle-to-jsonl-tls           = "Reads 100k rows from Oracle over TCPS (wallet-verified) — native ODPI-C TLS (needs a wallet; see README)"
+oracle-to-oracle              = "Loads 100k rows into Oracle (atomic mode) — destination smoke test"
+oracle-to-oracle-staged-merge = "Loads 100k rows into Oracle via staged_merge (MERGE upsert by id)"

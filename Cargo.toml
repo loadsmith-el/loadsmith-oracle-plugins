@@ -1,0 +1,37 @@
+# loadsmith-oracle-plugins — the Oracle source + destination connector for
+# Loadsmith, shipped OUT OF CANON because it links Oracle's native client
+# (ODPI-C / Instant Client) instead of a pure-Rust driver.
+#
+# Why out of canon: the pure-Rust driver (`oracle-rs`) cannot yet read result
+# sets larger than one TNS packet (see the loadsmith-el/oracle-rs fork and its
+# UPSTREAM-oracle-rs.md). Until that lands upstream, Oracle ships here on ODPI-C,
+# which reads result sets natively and supports amd64 + arm64 — at the cost of a
+# C toolchain at build time and the Oracle Instant Client `.so` at runtime. When
+# `oracle-rs` matures, Oracle returns to the canonical pure-Rust plugin set and
+# this repo (plus the `loadsmith-oracle-odpi` image) is retired.
+
+[workspace]
+resolver = "2"
+members = ["connector"]
+
+[workspace.package]
+license = "Apache-2.0"
+
+[workspace.dependencies]
+# Pinned Loadsmith SDK (same rev as the canonical plugin set at extraction time).
+loadsmith-plugin-sdk = { git = "https://github.com/loadsmith-el/loadsmith", rev = "e01863f55057507f50aa9c5e341744360b994e54" }
+loadsmith-arrow      = { git = "https://github.com/loadsmith-el/loadsmith", rev = "e01863f55057507f50aa9c5e341744360b994e54" }
+
+tokio        = { version = "1", features = ["full"] }
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+anyhow       = "1"
+tracing      = "0.1"
+async-trait  = "0.1"
+arrow        = "54"
+arrow-array  = "54"
+arrow-schema = "54"
+chrono       = { version = "0.4", features = ["serde"] }
+# Native Oracle driver (ODPI-C). Compiles the bundled ODPI-C C with `cc` (no
+# Instant Client needed at BUILD time); dlopens `libclntsh` at RUNTIME.
+oracle       = "0.6"
