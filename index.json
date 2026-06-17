@@ -1,3 +1,10 @@
 {
-  "plugins": {}
+  "plugins": {
+    "oracle": {
+      "latest": "0.1.0",
+      "versions": {
+        "0.1.0": "https://github.com/loadsmith-el/loadsmith-oracle-plugins/releases/download/oracle-v0.1.0/loadsmith-plugin.yaml"
+      }
+    }
+  }
 }
