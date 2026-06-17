@@ -46,6 +46,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build (native ${{ matrix.arch }})
         run: cargo build --release --manifest-path "${PLUGIN_DIR}/Cargo.toml"
+      - name: Test (native ${{ matrix.arch }})
+        # Unit tests only — they need no Instant Client (the `oracle` crate
+        # dlopen's libclntsh at runtime, not when building/testing the Rust bits).
+        # Live tests are #[ignore]d (they need a real DB) and run via the lab e2e.
+        run: cargo test --release --manifest-path "${PLUGIN_DIR}/Cargo.toml"
       - name: Package
         id: pkg
         run: |
