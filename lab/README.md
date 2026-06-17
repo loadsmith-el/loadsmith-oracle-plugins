@@ -18,36 +18,44 @@ cargo run -p loadsmith-lab-cli -- list                       # see oracle-lab/or
 ## Running
 
 The connector needs the Instant Client at runtime, so the engine must run from
-the delivery image (which bakes it in), **not** the plain slim:
+the delivery image (which bakes it in), **not** the plain slim. Each case pins
+that image itself via its `loadsmith.image` key — a per-case engine-image
+override the runner already supports ([`resolve_loadsmith_image`](../../loadsmith-lab/crates/loadsmith-lab-runner/src/image.rs)) —
+so no special flag is needed:
 
 ```bash
-loadsmith-lab run --select oracle-lab/oracle-to-jsonl \
-  --loadsmith-image ghcr.io/loadsmith-el/loadsmith-oracle-odpi
+loadsmith-lab run --select oracle-lab/oracle-to-jsonl
 ```
 
-> ⚠️ **`--loadsmith-image` does not exist in the runner yet** — it pins the engine
-> repo to `ghcr.io/loadsmith-el/loadsmith` and only varies `--tag`. Adding a
-> generic engine-image override is a tracked follow-up (see [ROADMAP](../ROADMAP.md)).
-> Until then the cases can't run unchanged through the standard runner path.
+The image must be resolvable: either pull/publish
+`ghcr.io/loadsmith-el/loadsmith-oracle-odpi:slim`, or build it locally and tag it
+under that ref (`docker tag <local> ghcr.io/loadsmith-el/loadsmith-oracle-odpi:slim`)
+— the runner uses a locally-present image as-is before attempting a pull.
 
 ## Cases
 
 | Case | What | State |
 |------|------|-------|
-| `oracle-to-jsonl` | read 100k wide rows → JSONL (content/type smoke) | plaintext, ready |
-| `oracle-to-oracle` | load 100k rows (atomic INSERT) | plaintext, ready |
-| `oracle-to-oracle-staged-merge` | load 100k via `MERGE` upsert by id | plaintext, ready |
-| `oracle-to-jsonl-tls` | read over TCPS (wallet-verified) | **needs a wallet** (below) |
+| `oracle-to-jsonl` | read 100k wide rows → JSONL (content/type smoke) | ready |
+| `oracle-to-jsonl-tls` | read over TCPS (wallet-verified) | ready |
+| `oracle-to-jsonl-incremental` | watermark read (cursor > 50000 → upper 50k) | ready |
+| `oracle-to-oracle` | load 100k rows (atomic INSERT) | ready |
+| `oracle-to-oracle-staged-merge` | load 100k via `MERGE` upsert by id | ready |
+| `oracle-to-oracle-lob` | round-trip RAW/BLOB/CLOB Oracle→Oracle | ready |
+| `oracle-to-oracle-nls` | load under a comma-decimal `NLS_LANG` | ready |
 
-## The TLS wallet follow-up
+## The TLS wallet
 
 ODPI-C verifies TLS against an Oracle **wallet** (`cwallet.sso`), not a PEM. The
-`oracle-to-jsonl-tls` case points `tls.wallet_dir` at `/wallet`, which must hold
-an auto-login wallet built from the lab CA
-(`loadsmith-lab-canonical-images/images/lab-oracle/tls/ca.crt`). Building that
-wallet needs `orapki`/`mkstore` (not in Instant Client Basic). Wiring it in —
-bake into the delivery image, or generate + mount in the lab — is a follow-up;
-the plaintext cases cover read/write/merge until then.
+`oracle-to-jsonl-tls` case points `tls.wallet_dir` at `/wallet` and mounts an
+auto-login wallet there via `loadsmith.volumes`. The wallet (built from the lab
+CA — it holds only the public cert, so it is committed) lives in
+`cases/oracle-to-jsonl-tls/wallet/cwallet.sso`; regenerate it with the adjacent
+`wallet/generate.sh`. That script runs orapki's main class from Maven Central's
+PKI jars in a stock JRE container — `orapki`/`mkstore` are stripped from the
+Instant Client and the slim DB images, so no Oracle image is needed. The lab
+stunnel must serve the full leaf → CA chain (Oracle's NZ TLS won't build a path
+from a wallet-held CA); see `loadsmith-lab-canonical-images/images/lab-oracle`.
 
 ## The validation that matters
 

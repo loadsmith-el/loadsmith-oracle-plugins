@@ -1,0 +1,25 @@
+pipeline:
+  name: oracle-to-jsonl-incremental
+
+source:
+  type: oracle
+  config:
+    host: oracle
+    port: 1521
+    service_name: FREEPDB1
+    user: lab
+    password: lab
+    query: "SELECT * FROM spacecraft_telemetry_events"
+    batch_size: 2000
+    # Read only rows whose cursor column is past the watermark. The connector
+    # wraps the query and appends `WHERE event_sequence > <initial_value> ORDER
+    # BY event_sequence`; the watermark is cast NLS-safely. event_sequence is a
+    # 1..100000 sequential NUMBER, so > 50000 yields exactly 50000 rows.
+    incremental:
+      cursor_column: event_sequence
+      initial_value: "50000"
+
+destination:
+  type: jsonl
+  config:
+    path: /output/events.jsonl

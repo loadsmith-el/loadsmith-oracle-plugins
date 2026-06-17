@@ -211,9 +211,15 @@ impl SourcePlugin for OracleSourcePlugin {
         let (select_list, schema) = types::projected_select(&cols);
 
         if let Some(inc) = &cfg.incremental {
-            self.cursor_idx = schema.fields().iter().position(|f| f.name() == &inc.cursor_column);
-            self.cursor_type =
-                cols.iter().find(|c| c.name == inc.cursor_column).map(|c| c.oracle_type.clone());
+            // Resolve the config cursor name against the catalog's upper-cased
+            // names (a simple `event_ts` matches the column `EVENT_TS`).
+            let cursor = types::fold_ident(&inc.cursor_column);
+            self.cursor_idx =
+                schema.fields().iter().position(|f| types::fold_ident(f.name()) == cursor);
+            self.cursor_type = cols
+                .iter()
+                .find(|c| types::fold_ident(&c.name) == cursor)
+                .map(|c| c.oracle_type.clone());
             self.cursor_column = Some(inc.cursor_column.clone());
             self.initial_value = inc.initial_value.clone();
         }

@@ -15,7 +15,18 @@ services:
         service_name: FREEPDB1
         user: lab
         password: lab
-        probe_query: "SELECT 1 FROM spacecraft_telemetry_events WHERE ROWNUM = 1"
+        # Gate on the LAST object init.sql creates (the events_sink PK), not just
+        # the seeded source table — the seed COMMIT becomes visible several
+        # statements (index builds) before events_sink exists, so a source-only
+        # probe races the destination table into existence.
+        probe_query: "SELECT 1 FROM user_constraints WHERE constraint_name = 'PK_SINK'"
+
+# The Oracle plugin links the native ODPI-C client (libclntsh) at runtime, which
+# the plain slim engine image lacks. Run the core from the delivery image, which
+# bakes in the Instant Client and the Oracle source/destination plugins. Interim:
+# retired when the pure-Rust oracle-rs driver can read multi-packet result sets.
+loadsmith:
+  image: ghcr.io/loadsmith-el/loadsmith-oracle-odpi:slim
 
 pipeline:
   file: pipeline.yaml

@@ -1,7 +1,12 @@
 /target
 **/target
 Cargo.lock
-# image build context staging (CI drops per-arch plugin binaries here) — NOT
+# image build context staging: the CI (and a local `docker build -f image/Dockerfile .`
+# from the repo root) drops per-arch plugin binaries in ./bin/<arch>/ — NOT
 # connector/src/bin, which is source.
 /bin/
 /dist/
+# local cross-build target dirs used when staging the image binaries
+# (rust:1-bookworm amd64 + arm64 builds)
+/target-bookworm/
+/target-arm64/

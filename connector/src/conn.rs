@@ -177,8 +177,17 @@ pub fn build_descriptor(cfg: &ConnectionConfig) -> Result<String> {
 /// Synchronous (ODPI-C); call inside [`tokio::task::block_in_place`].
 pub fn connect(cfg: &ConnectionConfig) -> Result<Connection> {
     let descriptor = build_descriptor(cfg)?;
-    Connection::connect(&cfg.user, &cfg.password, &descriptor)
-        .map_err(|e| anyhow::anyhow!("oracle connect failed: {e}"))
+    let conn = Connection::connect(&cfg.user, &cfg.password, &descriptor)
+        .map_err(|e| anyhow::anyhow!("oracle connect failed: {e}"))?;
+    // Numbers cross the connector as text, so pin the decimal/group characters on
+    // every session. Otherwise a comma-decimal locale (e.g. NLS_LANG=GERMAN…)
+    // makes the source render `3.14` as `3,14` and/or the destination reject the
+    // `.`-formatted values we bind (ORA-01722). `.` decimal + `,` group is the
+    // canonical form the read/write paths assume. (Temporal columns already use
+    // explicit TO_* formats and are unaffected.)
+    conn.execute("ALTER SESSION SET NLS_NUMERIC_CHARACTERS = '.,'", &[])
+        .map_err(|e| anyhow::anyhow!("pinning NLS_NUMERIC_CHARACTERS failed: {e}"))?;
+    Ok(conn)
 }
 
 #[cfg(test)]

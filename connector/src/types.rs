@@ -293,10 +293,49 @@ fn downcast<T: 'static>(array: &dyn Array) -> &T {
 
 // ── Identifier quoting ────────────────────────────────────────────────────────
 
-/// Quotes an Oracle identifier, escaping embedded double-quotes. Oracle folds
-/// unquoted identifiers to upper-case; quoting makes the name exact.
+/// Quotes an Oracle identifier the way Oracle's own parser resolves a name.
+///
+/// Oracle folds an *unquoted* identifier to upper-case, so a table created as
+/// `events_sink` is stored — and must be referenced — as `EVENTS_SINK`. Config
+/// values (`target_table`, `merge_key`) are natural names the user typically
+/// writes in lower/mixed case, so a *simple* identifier is folded to upper-case
+/// before quoting; that makes `events_sink` reach `EVENTS_SINK` while still
+/// quoting the name (safe against reserved words). An identifier that isn't
+/// simple (spaces, dots, embedded quotes, leading digit, …) is quoted verbatim,
+/// case-preserved — the escape hatch for names that genuinely need it. Names
+/// sourced from Oracle's catalog (column descriptions) already arrive
+/// upper-cased, so folding is a no-op for them.
 pub fn quote_ident(name: &str) -> String {
-    format!("\"{}\"", name.replace('"', "\"\""))
+    if is_simple_ident(name) {
+        format!("\"{}\"", name.to_uppercase())
+    } else {
+        format!("\"{}\"", name.replace('"', "\"\""))
+    }
+}
+
+/// The form a config identifier resolves to for *comparison* against Oracle's
+/// catalog names (which arrive upper-cased): a simple identifier folded to
+/// upper-case, anything else verbatim — i.e. [`quote_ident`] without the quotes.
+/// Use this to match a config-supplied name (e.g. a `merge_key`) against the
+/// incoming column names so `id` matches the catalog's `ID`.
+pub fn fold_ident(name: &str) -> String {
+    if is_simple_ident(name) {
+        name.to_uppercase()
+    } else {
+        name.to_string()
+    }
+}
+
+/// A "simple" Oracle identifier: a leading ASCII letter followed by ASCII
+/// letters, digits, or `_ $ #` — the form Oracle accepts unquoted (and folds to
+/// upper-case). Anything else must be quoted verbatim to be valid.
+fn is_simple_ident(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '$' | '#'))
 }
 
 #[cfg(test)]
@@ -344,6 +383,24 @@ mod tests {
 
     #[test]
     fn quote_ident_escapes() {
+        // Not a simple identifier (embedded quote) → quoted verbatim, escaped.
         assert_eq!(quote_ident("A\"B"), "\"A\"\"B\"");
+    }
+
+    #[test]
+    fn quote_ident_folds_simple_names_to_upper() {
+        // Config-supplied natural names reach Oracle's upper-cased catalog names.
+        assert_eq!(quote_ident("events_sink"), "\"EVENTS_SINK\"");
+        assert_eq!(quote_ident("id"), "\"ID\"");
+        assert_eq!(quote_ident("MixedCase"), "\"MIXEDCASE\"");
+        // Already upper-cased catalog names are unchanged.
+        assert_eq!(quote_ident("EVENT_ID"), "\"EVENT_ID\"");
+    }
+
+    #[test]
+    fn quote_ident_preserves_non_simple_names() {
+        // A leading digit or a space is not a simple identifier → verbatim case.
+        assert_eq!(quote_ident("1table"), "\"1table\"");
+        assert_eq!(quote_ident("weird name"), "\"weird name\"");
     }
 }

@@ -1,11 +1,13 @@
 case:
-  name: oracle-to-oracle-staged-merge
+  name: oracle-to-oracle-nls
   description: >
-    Loads 100k rows into Oracle via staged_merge — an array `MERGE INTO … USING
-    (SELECT … FROM dual) … WHEN MATCHED THEN UPDATE … WHEN NOT MATCHED THEN
-    INSERT` upsert keyed by id. Exercises the idempotent upsert path against a
-    real Oracle; asserts every row committed.
-  tags: [oracle, destination, staged-merge, smoke]
+    Loads 100k rows Oracle→Oracle with the engine session forced to a
+    comma-decimal locale (NLS_LANG=GERMAN_GERMANY.AL32UTF8). Numbers cross the
+    connector as text, so a hostile NLS_NUMERIC_CHARACTERS is the classic way to
+    corrupt NUMBER values; this case proves the read→write round-trip stays
+    faithful under that locale. Decimal fidelity (reading_decimal) is checked
+    out-of-band against the source (the harness asserts row counts only).
+  tags: [oracle, destination, nls, smoke]
 
 services:
   - image: images/lab-oracle
@@ -17,10 +19,8 @@ services:
         service_name: FREEPDB1
         user: lab
         password: lab
-        # Gate on the LAST object init.sql creates (the events_sink PK), not just
-        # the seeded source table — the seed COMMIT becomes visible several
-        # statements (index builds) before events_sink exists, so a source-only
-        # probe races the destination table into existence.
+        # Gate on the events_sink PK (created late in init.sql), so the dest
+        # table exists before the case connects.
         probe_query: "SELECT 1 FROM user_constraints WHERE constraint_name = 'PK_SINK'"
 
 # The Oracle plugin links the native ODPI-C client (libclntsh) at runtime, which
@@ -29,6 +29,9 @@ services:
 # retired when the pure-Rust oracle-rs driver can read multi-packet result sets.
 loadsmith:
   image: ghcr.io/loadsmith-el/loadsmith-oracle-odpi:slim
+  # Force a comma-decimal client locale to stress the text↔NUMBER conversions.
+  env:
+    - NLS_LANG=GERMAN_GERMANY.AL32UTF8
 
 pipeline:
   file: pipeline.yaml

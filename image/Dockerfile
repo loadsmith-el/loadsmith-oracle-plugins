@@ -20,7 +20,9 @@
 ARG BASE=ghcr.io/loadsmith-el/loadsmith:slim
 FROM ${BASE}
 
-# Instant Client Basic Lite version (smallest variant with libclntsh).
+# Instant Client Basic Lite version (smallest variant with libclntsh). This pins
+# the x86-64 download; the ARM64 build uses Oracle's versionless "latest" arm64
+# package (Oracle ships no versioned ARM64 URL — see the RUN block below).
 ARG IC_VERSION=23.5.0.24.07
 # Docker's TARGETARCH: "amd64" | "arm64".
 ARG TARGETARCH
@@ -31,15 +33,18 @@ USER root
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends libaio1 curl ca-certificates unzip; \
+    base="https://download.oracle.com/otn_software/linux/instantclient"; \
     case "${TARGETARCH}" in \
-      amd64) ic_arch="linux.x64";   ic_ver="${IC_VERSION}" ;; \
-      arm64) ic_arch="linux.arm64"; ic_ver="${IC_VERSION}" ;; \
+      # x86-64: a pinned, versioned Basic Lite (IC_VERSION). \
+      amd64) url="${base}/${IC_VERSION%%.*}50000/instantclient-basiclite-linux.x64-${IC_VERSION}.zip" ;; \
+      # aarch64: Oracle publishes the ARM64 Instant Client ONLY at the versionless \
+      # "latest" path, and with a HYPHEN ("linux-arm64", not "linux.arm64") — there \
+      # is no versioned ARM64 URL like x64 has. It currently resolves to IC 23.x \
+      # (compatible with 12c–19c servers, same as the x64 pin). \
+      arm64) url="${base}/instantclient-basiclite-linux-arm64.zip" ;; \
       *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    url="https://download.oracle.com/otn_software/linux/instantclient/${ic_ver%%.*}50000/instantclient-basiclite-${ic_arch}-${ic_ver}.zip"; \
-    # Fall back to the versionless "latest" path if the pinned URL 404s.
-    curl -fsSL -o /tmp/ic.zip "${url}" || \
-      curl -fsSL -o /tmp/ic.zip "https://download.oracle.com/otn_software/linux/instantclient/instantclient-basiclite-${ic_arch}.zip"; \
+    curl -fsSL -o /tmp/ic.zip "${url}"; \
     mkdir -p /opt/oracle; \
     unzip -q /tmp/ic.zip -d /opt/oracle; \
     icdir="$(find /opt/oracle -maxdepth 1 -type d -name 'instantclient*' | head -n1)"; \

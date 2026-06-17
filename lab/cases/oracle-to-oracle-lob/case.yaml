@@ -1,0 +1,40 @@
+case:
+  name: oracle-to-oracle-lob
+  description: >
+    Round-trips the binary/LOB types Oracle→Oracle: reads the lob_roundtrip
+    fixture (RAW, BLOB, CLOB + a NULL row) and atomic-inserts it into
+    lob_roundtrip_sink. Exercises the connector's binary path — RAW/BLOB read as
+    Arrow Binary (Cell::Bytes) and bound back as bytes, CLOB read as text
+    (TO_CHAR) and bound back — which the all-text/number telemetry table never
+    hits. Byte-fidelity is checked out-of-band with DBMS_LOB.COMPARE (the harness
+    asserts row counts only).
+  tags: [oracle, destination, lob, binary, smoke]
+
+services:
+  - image: images/lab-oracle
+    alias: oracle
+    readiness:
+      tcp: 1521
+      timeout_seconds: 600
+      oracle:
+        service_name: FREEPDB1
+        user: lab
+        password: lab
+        # Gate on the LAST object init.sql creates (the LOB sink PK), so the
+        # fixture is fully built before the case connects.
+        probe_query: "SELECT 1 FROM user_constraints WHERE constraint_name = 'PK_LOB_SINK'"
+
+# The Oracle plugin links the native ODPI-C client (libclntsh) at runtime, which
+# the plain slim engine image lacks. Run the core from the delivery image, which
+# bakes in the Instant Client and the Oracle source/destination plugins. Interim:
+# retired when the pure-Rust oracle-rs driver can read multi-packet result sets.
+loadsmith:
+  image: ghcr.io/loadsmith-el/loadsmith-oracle-odpi:slim
+
+pipeline:
+  file: pipeline.yaml
+
+expect:
+  status: success
+  rows_read: 3
+  rows_written: 3
