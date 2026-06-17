@@ -1,0 +1,120 @@
+name: Lab e2e (native arm64)
+
+# First automated end-to-end run of the Oracle lab cases on REAL arm64 hardware
+# (ubuntu-24.04-arm, not QEMU). It drives loadsmith-lab against a live Oracle Free
+# fixture through the loadsmith-oracle-odpi delivery image, end to end.
+#
+# DRAFT — this workflow has never run in CI. It is expected to need a few
+# push-and-iterate cycles to go green (Oracle Free is heavy and slow to start;
+# image/origin resolution and docker-in-CI specifics need real validation). It is
+# manual-trigger only on purpose so it neither blocks pushes nor spams runs while
+# being stabilised. Promote it to `schedule:`/`push:` once it's reliably green.
+#
+# How it works (no published images required — everything is built locally):
+#   1. Build the loadsmith-lab runner + the oracle plugin binaries (native arm64).
+#   2. Build the loadsmith-oracle-odpi image locally, tagged exactly as the cases
+#      pin it (…:slim). The runner resolves `loadsmith.image` local-first, so it
+#      uses this build without pulling (see loadsmith-lab image.rs).
+#   3. Register the cross-origin fixture (lab-oracle lives in the canonical images
+#      repo); the runner builds the lab-oracle service image on demand
+#      (local → pull-fail → build-from-origin).
+#   4. Run the selected oracle cases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      select:
+        description: >-
+          Space-separated case selectors. Default is the headline read case for
+          fast iteration. Full set:
+          oracle-lab/oracle-to-jsonl oracle-lab/oracle-to-jsonl-tls
+          oracle-lab/oracle-to-jsonl-incremental oracle-lab/oracle-to-oracle
+          oracle-lab/oracle-to-oracle-staged-merge oracle-lab/oracle-to-oracle-lob
+          oracle-lab/oracle-to-oracle-nls
+        default: "oracle-lab/oracle-to-jsonl"
+        required: false
+
+env:
+  PLUGIN_DIR: connector
+  ODPI_IMAGE: ghcr.io/loadsmith-el/loadsmith-oracle-odpi:slim
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read   # to pull the loadsmith:slim base image for the odpi build
+    steps:
+      - name: Checkout oracle-plugins
+        uses: actions/checkout@v4
+        with:
+          path: loadsmith-oracle-plugins
+
+      - name: Checkout loadsmith-lab (the runner)
+        uses: actions/checkout@v4
+        with:
+          repository: loadsmith-el/loadsmith-lab
+          path: loadsmith-lab
+
+      - name: Checkout canonical images (lab-oracle fixture origin)
+        uses: actions/checkout@v4
+        with:
+          repository: loadsmith-el/loadsmith-lab-canonical-images
+          path: loadsmith-lab-canonical-images
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build the lab runner (native arm64)
+        working-directory: loadsmith-lab
+        run: cargo build
+
+      - name: Build the oracle plugin binaries (native arm64)
+        working-directory: loadsmith-oracle-plugins
+        run: |
+          cargo build --release --manifest-path "${PLUGIN_DIR}/Cargo.toml"
+          mkdir -p bin/arm64
+          # Workspace root target/ (member crate, manifest-path build) — same
+          # layout the release workflow stages from. Stage exactly the binaries
+          # the image Dockerfile COPYs.
+          cp target/release/loadsmith-source-oracle bin/arm64/
+          cp target/release/loadsmith-destination-oracle bin/arm64/
+
+      - name: Log in to GHCR (pull the loadsmith:slim base)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the loadsmith-oracle-odpi image locally (arm64)
+        working-directory: loadsmith-oracle-plugins
+        # Plain build on a native arm64 runner: pass TARGETARCH explicitly (it is
+        # only auto-set under buildx multi-platform). Tag it exactly as the cases
+        # pin it so the runner finds it locally and skips the pull.
+        run: |
+          docker build \
+            -f image/Dockerfile \
+            --build-arg TARGETARCH=arm64 \
+            -t "${ODPI_IMAGE}" \
+            .
+
+      - name: Register lab origins
+        working-directory: loadsmith-lab
+        run: |
+          LAB=./target/debug/loadsmith-lab
+          "$LAB" origin local add oracle-lab "${GITHUB_WORKSPACE}/loadsmith-oracle-plugins/lab"
+          "$LAB" origin local add images "${GITHUB_WORKSPACE}/loadsmith-lab-canonical-images"
+
+      - name: Run the oracle lab cases
+        working-directory: loadsmith-lab
+        # `--select` takes one <origin>/<name> at a time, so loop over the list.
+        # (`run --all` would also work here — only oracle-lab offers cases — but
+        # the per-case loop gives clearer pass/fail boundaries while iterating.)
+        run: |
+          set -e
+          for case in ${{ github.event.inputs.select }}; do
+            echo "::group::$case"
+            ./target/debug/loadsmith-lab run --select "$case"
+            echo "::endgroup::"
+          done
