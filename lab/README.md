@@ -20,7 +20,7 @@ cargo run -p loadsmith-lab-cli -- list                       # see oracle-lab/or
 The connector needs the Instant Client at runtime, so the engine must run from
 the delivery image (which bakes it in), **not** the plain slim. Each case pins
 that image itself via its `loadsmith.image` key — a per-case engine-image
-override the runner already supports ([`resolve_loadsmith_image`](../../loadsmith-lab/crates/loadsmith-lab-runner/src/image.rs)) —
+override the runner already supports ([`resolve_loadsmith_image`](https://github.com/loadsmith-el/loadsmith-lab/blob/main/crates/loadsmith-lab-runner/src/image.rs)) —
 so no special flag is needed:
 
 ```bash
